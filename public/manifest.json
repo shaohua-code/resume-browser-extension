@@ -11,6 +11,7 @@
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*",
     "https://aijianli.tech/*",
+    "https://www.aijianli.tech/*",
     "https://*.zhipin.com/*",
     "https://*.51job.com/*",
     "https://*.zhaopin.com/*",

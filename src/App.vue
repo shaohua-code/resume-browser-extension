@@ -10,6 +10,7 @@ import {
   Send, ShieldCheck, Sparkles, WandSparkles,
 } from 'lucide-vue-next'
 import { analyzeJob, deleteSavedJob, exchangeExtensionCode, getAutofillData, getBootstrap, getSavedJobs, saveJob } from './api'
+import { getPreferredOrigin } from './origins'
 
 const ui = {
   brand: '\u0041\u0049 \u7b80\u5386',
@@ -45,7 +46,7 @@ const savedJobs = ref([])
 const savedId = ref(null)
 const confirmingRemove = ref(false)
 const pendingAction = ref('')
-const appUrl = import.meta.env.VITE_APP_ORIGIN || 'http://localhost:5173'
+const appUrl = getPreferredOrigin(import.meta.env.VITE_APP_ORIGIN, 'http://localhost:5173')
 let removeConfirmTimer = null
 
 const hasJob = computed(() => job.value?.jdText?.length >= 40)
