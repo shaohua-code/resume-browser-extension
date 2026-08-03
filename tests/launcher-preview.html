@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>悬浮入口视觉验收</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #243530; background: #edf5f6; font-family: "Microsoft YaHei", Arial, sans-serif; }
+    header { height: 72px; padding: 0 52px; display: flex; align-items: center; justify-content: space-between; color: #fff; background: #173a3f; }
+    header strong { font-size: 23px; }
+    header nav { word-spacing: 26px; color: #d8e6e3; }
+    .filters { display: flex; gap: 10px; padding: 20px 52px; }
+    .filters span { padding: 9px 13px; border-radius: 5px; background: #fff; color: #65746f; }
+    main { display: grid; grid-template-columns: 340px minmax(520px, 1fr); gap: 22px; padding: 0 52px 60px; }
+    aside, article { min-height: 700px; border: 1px solid #dde9e5; border-radius: 8px; background: #fff; }
+    .job { padding: 20px; border-bottom: 1px solid #e7eeeb; }
+    .job.active { border-left: 3px solid #15a08a; background: #f4fbf9; }
+    .job b { display: block; margin-bottom: 10px; font-size: 17px; }
+    .job small { color: #7a8984; }
+    article { padding: 32px 38px; }
+    .headline { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+    h1 { margin: 0; font-size: 28px; }
+    .salary { color: #f05c46; font-size: 24px; font-weight: 700; }
+    .meta { margin: 14px 0 34px; color: #6c7b76; }
+    h2 { margin: 28px 0 16px; font-size: 20px; }
+    p { line-height: 1.9; color: #465a54; }
+  </style>
+</head>
+<body>
+  <header><strong>招聘平台</strong><nav>首页 职位 公司 消息 简历</nav></header>
+  <div class="filters"><span>深圳</span><span>前端开发</span><span>5-10 年</span><span>本科</span></div>
+  <main>
+    <aside>
+      <div class="job"><b>前端开发工程师</b><small>示例网络 · 15-25K</small></div>
+      <div class="job active"><b>高级前端工程师</b><small>星河科技 · 20-30K·14薪</small></div>
+      <div class="job"><b>Web 工程师</b><small>未来软件 · 18-26K</small></div>
+    </aside>
+    <article>
+      <div class="headline"><h1>高级前端工程师</h1><span class="salary">20-30K·14薪</span></div>
+      <div class="meta">深圳 · 5-10 年 · 本科</div>
+      <h2>职位描述</h2>
+      <p>负责业务平台前端架构设计与核心功能开发，建设稳定、可维护的组件体系。</p>
+      <p>熟悉 Vue、TypeScript、工程化构建与性能优化，具备复杂项目交付经验。</p>
+      <h2>工作地址</h2>
+      <p>深圳市南山区科技园</p>
+    </article>
+  </main>
+  <script>
+    // 视觉验收页只模拟扩展消息响应，真实消息链路由 launcher.test.mjs 验证。
+    window.chrome = window.chrome || {}
+    window.chrome.runtime = { sendMessage: async () => ({ ok: true, detected: true }) }
+  </script>
+  <script src="../public/content/launcher.js"></script>
+</body>
+</html>

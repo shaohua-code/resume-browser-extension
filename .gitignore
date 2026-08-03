@@ -1,0 +1,73 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Build output and caches
+dist/
+.vite/
+.cache/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Extension packages and signing secrets
+*.crx
+*.pem
+*.key
+*.p12
+*.zip
+artifacts/
+releases/
+
+# Local browser profiles
+.chrome-profile/
+chrome-profile/
+browser-profile/
+user-data/
+
+# Local environment overrides
+.env
+.env.local
+.env.*.local
+.env.secret
+.env.secrets
+!.env.example
+!.env.*.example
+
+# Runtime logs and process files
+*.log
+logs/
+*.pid
+*.pid.lock
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Test reports
+playwright-report/
+test-results/
+blob-report/
+
+# Editor settings
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp

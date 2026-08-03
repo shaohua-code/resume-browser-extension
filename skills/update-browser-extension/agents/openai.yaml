@@ -1,0 +1,4 @@
+interface:
+  display_name: "更新浏览器插件"
+  short_description: "审计、开发并同步 AI 简历浏览器插件知识与 PRD"
+  default_prompt: "Use $update-browser-extension to audit and update the AI resume browser extension."
