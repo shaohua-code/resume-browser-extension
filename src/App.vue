@@ -9,7 +9,7 @@ import {
   ClipboardCheck, Copy, ExternalLink, FolderHeart, LoaderCircle, RefreshCw,
   Send, ShieldCheck, Sparkles, WandSparkles,
 } from 'lucide-vue-next'
-import { analyzeJob, exchangeExtensionCode, getAutofillData, getBootstrap, getSavedJobs, saveJob } from './api'
+import { analyzeJob, deleteSavedJob, exchangeExtensionCode, getAutofillData, getBootstrap, getSavedJobs, saveJob } from './api'
 
 const ui = {
   brand: '\u0041\u0049 \u7b80\u5386',
@@ -43,8 +43,10 @@ const notice = ref('')
 const result = ref(null)
 const savedJobs = ref([])
 const savedId = ref(null)
+const confirmingRemove = ref(false)
 const pendingAction = ref('')
 const appUrl = import.meta.env.VITE_APP_ORIGIN || 'http://localhost:5173'
+let removeConfirmTimer = null
 
 const hasJob = computed(() => job.value?.jdText?.length >= 40)
 const jobSummary = computed(() => String(job.value?.jdText || '').trim())
@@ -70,6 +72,39 @@ const nextActions = computed(() => {
   ]
 })
 
+// 招聘平台常把岗位 ID 放在查询参数中，只移除明确的追踪参数后再比较收藏状态。
+function comparableSourceUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim())
+    for (const key of [...url.searchParams.keys()]) {
+      if (/^(?:utm_.+|from|fromSource|source|refer|ref|spm|ka|sid|track|trackingId|securityId|s|t|req)$/i.test(key)) {
+        url.searchParams.delete(key)
+      }
+    }
+    url.hash = ''
+    return url.toString()
+  } catch {
+    return ''
+  }
+}
+
+function syncSavedState() {
+  if (!job.value) {
+    savedId.value = null
+    return
+  }
+  const currentUrl = comparableSourceUrl(job.value.sourceUrl)
+  const exact = savedJobs.value.find((item) => comparableSourceUrl(item.source_url) === currentUrl)
+  // 极少数单页招聘站拿不到岗位链接时，标题与公司同时一致才允许回退匹配。
+  const fallback = exact || savedJobs.value.find((item) => (
+    item.title === job.value.sourceTitle
+    && item.company
+    && job.value.company
+    && item.company === job.value.company
+  ))
+  savedId.value = fallback?.id || null
+}
+
 onMounted(async () => {
   await loadPendingJob()
   await loadBootstrap()
@@ -94,7 +129,10 @@ async function checkPageAccess() {
   } catch { pageAccess.value = '' }
 }
 
-onBeforeUnmount(() => chrome.storage.session.onChanged.removeListener(handleSessionChange))
+onBeforeUnmount(() => {
+  chrome.storage.session.onChanged.removeListener(handleSessionChange)
+  if (removeConfirmTimer) clearTimeout(removeConfirmTimer)
+})
 
 async function loadPendingJob() {
   const { pendingJob, pendingAction: action, pageActionError } = await chrome.storage.session.get(['pendingJob', 'pendingAction', 'pageActionError'])
@@ -111,7 +149,8 @@ function handleSessionChange(changes, areaName) {
   if (changes.pendingJob) {
     job.value = changes.pendingJob.newValue || null
     result.value = null
-    savedId.value = null
+    confirmingRemove.value = false
+    syncSavedState()
   }
   if (changes.pendingAction) pendingAction.value = changes.pendingAction.newValue || ''
   if (changes.pageActionError?.newValue) error.value = changes.pageActionError.newValue
@@ -198,7 +237,8 @@ async function captureCurrentJob({ silent = false } = {}) {
     if (!response?.ok) throw new Error(response?.error || '\u6682\u65f6\u65e0\u6cd5\u8bc6\u522b\u5f53\u524d\u5c97\u4f4d')
     job.value = response.job
     result.value = null
-    savedId.value = null
+    confirmingRemove.value = false
+    syncSavedState()
     await chrome.storage.session.set({ pendingJob: response.job })
     const missing = [
       !job.value.company && '\u516c\u53f8',
@@ -209,7 +249,7 @@ async function captureCurrentJob({ silent = false } = {}) {
     else message.success(`\u5df2\u8bc6\u522b${job.value.sourcePlatform ? ` ${job.value.sourcePlatform}` : ''}\u5f53\u524d\u5c97\u4f4d`)
   } catch (requestError) {
     if (!silent) {
-      // Never keep an old job visible after a failed capture from another tab.
+      // 切换标签页后识别失败时清空旧岗位，避免用户误把上一页内容当作当前岗位。
       job.value = null
       result.value = null
       savedId.value = null
@@ -227,7 +267,11 @@ async function refreshSavedJobs() {
     const { extensionSession } = await chrome.storage.local.get('extensionSession')
     const data = await getSavedJobs(extensionSession)
     savedJobs.value = data.jobs || []
-  } catch { savedJobs.value = [] }
+    syncSavedState()
+  } catch {
+    savedJobs.value = []
+    savedId.value = null
+  }
 }
 
 async function saveAndPrepare() {
@@ -249,7 +293,8 @@ async function saveAndPrepare() {
     match_result: result.value || {},
     status: result.value ? 'ready' : 'saved',
   })
-  savedId.value = data.job?.id || true
+  if (!data.job?.id) throw new Error('收藏结果缺少岗位编号，请稍后重试')
+  savedId.value = data.job.id
   await refreshSavedJobs()
 }
 
@@ -264,6 +309,35 @@ async function saveCurrentJob() {
     message.success('\u5c97\u4f4d\u5df2\u6536\u85cf')
   } catch (requestError) {
     error.value = requestError.message || '\u6536\u85cf\u5931\u8d25'
+    message.error(error.value)
+  } finally {
+    saving.value = false
+  }
+}
+
+function requestRemoveCurrentJob() {
+  confirmingRemove.value = true
+  message.warning('请再次点击“确认移除”，收藏才会被删除')
+  if (removeConfirmTimer) clearTimeout(removeConfirmTimer)
+  removeConfirmTimer = setTimeout(() => { confirmingRemove.value = false }, 4500)
+}
+
+async function removeCurrentJob() {
+  if (!savedId.value || saving.value) return
+  saving.value = true
+  notice.value = ''
+  error.value = ''
+  try {
+    const removedId = savedId.value
+    const { extensionSession } = await chrome.storage.local.get('extensionSession')
+    await deleteSavedJob(extensionSession, removedId)
+    savedJobs.value = savedJobs.value.filter((item) => item.id !== removedId)
+    savedId.value = null
+    confirmingRemove.value = false
+    notice.value = '已从「我的收藏」移除，招聘网站原有收藏不受影响。'
+    message.success('已取消收藏')
+  } catch (requestError) {
+    error.value = requestError.message || '取消收藏失败'
     message.error(error.value)
   } finally {
     saving.value = false
@@ -351,12 +425,21 @@ async function runPendingAutofill() {
           <span v-for="skill in job.skills" :key="skill">{{ skill }}</span>
         </div>
         <p v-if="jobSummary" class="job-summary">{{ jobSummary }}</p>
-        <div class="job-actions"><button class="subtle-action" :disabled="detecting" @click="captureCurrentJob"><RefreshCw :class="{ spin: detecting }" :size="14" />{{ detecting ? ui.detecting : ui.detect }}</button><button v-if="job" class="subtle-action" :disabled="saving" @click="saveCurrentJob"><FolderHeart :size="14" />{{ saving ? '正在收藏...' : '收藏岗位' }}</button></div>
+        <div class="job-actions">
+          <button class="subtle-action" :disabled="detecting" @click="captureCurrentJob"><RefreshCw :class="{ spin: detecting }" :size="14" />{{ detecting ? ui.detecting : ui.detect }}</button>
+          <button
+            v-if="job && savedId"
+            class="subtle-action is-saved"
+            :disabled="saving"
+            @click="confirmingRemove ? removeCurrentJob() : requestRemoveCurrentJob()"
+          ><FolderHeart :size="14" />{{ saving ? '正在取消...' : (confirmingRemove ? '确认移除' : '取消收藏') }}</button>
+          <button v-else-if="job" class="subtle-action" :disabled="saving" @click="saveCurrentJob"><FolderHeart :size="14" />{{ saving ? '正在收藏...' : '收藏岗位' }}</button>
+        </div>
       </section>
 
       <section class="resume-card">
         <label>{{ ui.resume }}</label>
-        <select v-model="selectedResume" @change="result = null; savedId = null"><option v-for="resume in bootstrap.resumes" :key="resume.id" :value="resume.id">{{ resume.title }}</option></select>
+        <select v-model="selectedResume" @change="result = null"><option v-for="resume in bootstrap.resumes" :key="resume.id" :value="resume.id">{{ resume.title }}</option></select>
         <button class="agent-primary" :disabled="preparing || !selectedResume" @click="startAgent"><LoaderCircle v-if="preparing" class="spin" :size="17" /><WandSparkles v-else :size="17" />{{ preparing ? ui.preparing : ui.prepare }}</button>
       </section>
 
@@ -383,6 +466,6 @@ async function runPendingAutofill() {
 .job-summary{max-height:360px;margin:11px 0 0!important;padding:9px 10px;border-left:3px solid #93cbbc;background:#f5faf8;color:#526861!important;font-size:11px!important;line-height:1.65!important;white-space:pre-wrap;overflow:auto}
 .job-address{margin:9px 0 0!important;color:#60736e!important;font-size:11px!important;line-height:1.5!important;overflow-wrap:anywhere}
 .job-skills{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.job-skills span{padding:3px 6px;border:1px solid #d8e7e1;border-radius:5px;background:#fff;color:#557068;font-size:10px}
-.job-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.job-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.subtle-action.is-saved{color:#a44f3b}.subtle-action:disabled{opacity:.55;cursor:not-allowed}
 .agent-access{display:flex;gap:6px;margin:10px 2px;color:#70817c;font-size:11px;line-height:1.5}
 </style>

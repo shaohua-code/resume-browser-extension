@@ -48,7 +48,9 @@ source_platform, source_original, jd_text, resume_id, match_result, status
 | `GET` | `/api/extension/resumes/:resumeId/autofill` | 获取受控回填数据 |
 | `GET` | `/api/extension/jobs` | 收藏列表 |
 | `GET` | `/api/extension/jobs/:jobId` | 收藏完整详情 |
-| `POST` | `/api/extension/jobs` | 新增或按原岗位地址更新收藏 |
+| `POST` | `/api/extension/jobs` | 新增或按清洗后的完整原岗位地址更新收藏；岗位 ID 查询参数必须保留 |
+| `POST` | `/api/extension/jobs/:jobId/analyze` | 网页端重新分析本人收藏岗位 |
+| `DELETE` | `/api/extension/jobs/:jobId` | 插件或网页端取消本人收藏，不改变招聘网站状态 |
 | `POST` | `/api/ai/match` | 当前简历与岗位匹配分析 |
 
 ## Chrome 存储

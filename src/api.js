@@ -36,6 +36,10 @@ export async function analyzeJob(session, { resumeId, jdText }) {
 }
 export async function saveJob(session, payload) { return request('/api/extension/jobs', { method: 'POST', session, body: payload }) }
 export async function getSavedJobs(session) { return request('/api/extension/jobs', { session }) }
+// 取消收藏只删除 AI 简历账号中的记录，不操作招聘平台自身状态。
+export async function deleteSavedJob(session, jobId) {
+  return request(`/api/extension/jobs/${encodeURIComponent(jobId)}`, { method: 'DELETE', session })
+}
 
 async function request(path, { method = 'GET', session, body } = {}) {
   const response = await fetch(`${await getApiBase()}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(session?.accessToken ? { Authorization: `Bearer ${session.accessToken}` } : {}) }, body: body ? JSON.stringify(body) : undefined })
