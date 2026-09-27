@@ -19,7 +19,7 @@ const ui = {
   connectTip: '\u5df2\u767b\u5f55\u4f1a\u81ea\u52a8\u8fde\u63a5\uff1b\u672a\u767b\u5f55\u65f6\u8bf7\u5728\u6253\u5f00\u7684\u9875\u9762\u5b8c\u6210\u767b\u5f55\u3002',
   reconnect: '\u91cd\u65b0\u8fde\u63a5',
   noJob: '\u6253\u5f00\u4e00\u4e2a\u5177\u4f53\u5c97\u4f4d\u8be6\u60c5\u9875\uff0c\u518d\u70b9\u51fb\u8bc6\u522b\u3002',
-  detect: '\u8bc6\u522b\u5f53\u524d\u5c97\u4f4d',
+  detect: '\u91cd\u65b0\u8bc6\u522b',
   detecting: '\u6b63\u5728\u8bc6\u522b\u5c97\u4f4d...',
   prepare: '\u5f00\u59cb\u6295\u524d\u51c6\u5907',
   preparing: '\u6b63\u5728\u57fa\u4e8e\u771f\u5b9e\u7ecf\u5386\u5206\u6790...',
@@ -155,6 +155,10 @@ function handleSessionChange(changes, areaName) {
   }
   if (changes.pendingAction) pendingAction.value = changes.pendingAction.newValue || ''
   if (changes.pageActionError?.newValue) error.value = changes.pageActionError.newValue
+  if (changes.autoDetectedAt?.newValue && changes.pendingJob?.newValue) {
+    notice.value = '\u5df2\u81ea\u52a8\u8bc6\u522b\u5f53\u524d\u5c97\u4f4d\uff0c\u53ef\u76f4\u63a5\u5f00\u59cb\u6295\u524d\u51c6\u5907\u3002'
+    message.success('\u5df2\u81ea\u52a8\u8bc6\u522b\u5f53\u524d\u5c97\u4f4d')
+  }
   runPendingAction()
 }
 

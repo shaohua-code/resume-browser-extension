@@ -42,6 +42,53 @@
     }
   }
 
+  let observer = null
+  let autoCaptureTimer = null
+  let locationTimer = null
+  let pollingTimer = null
+  let lastUrl = location.href
+  let lastFingerprint = ''
+
+  function jobFingerprint(job) {
+    const text = String(job?.jdText || '').replace(/\s+/g, ' ').slice(0, 800)
+    return [job?.sourceUrl, job?.sourceTitle, job?.company, text].join('|')
+  }
+
+  function scheduleAutomaticRecognition(delay = 1000) {
+    clearTimeout(autoCaptureTimer)
+    autoCaptureTimer = setTimeout(async () => {
+      const response = await extractCurrentJob().catch(() => null)
+      if (!response?.ok) return
+      const fingerprint = jobFingerprint(response.job)
+      if (!fingerprint || fingerprint === lastFingerprint) return
+      lastFingerprint = fingerprint
+      chrome.runtime.sendMessage({
+        type: 'AUTO_DETECTED_JOB',
+        job: response.job,
+        visible: document.visibilityState === 'visible',
+      }).catch(() => {})
+    }, delay)
+  }
+
+  function observeJobChanges() {
+    // The initial delay gives asynchronous job-detail components time to render.
+    scheduleAutomaticRecognition(1400)
+    observer = new MutationObserver(() => scheduleAutomaticRecognition())
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true })
+    locationTimer = window.setInterval(() => {
+      if (location.href === lastUrl) return
+      lastUrl = location.href
+      lastFingerprint = ''
+      scheduleAutomaticRecognition(500)
+    }, 700)
+    // Some recruitment sites replace detail content without a route transition
+    // and without a reliable mutation on the main container. This is a quiet
+    // fallback; fingerprints prevent duplicate side-panel updates.
+    pollingTimer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') scheduleAutomaticRecognition(350)
+    }, 3500)
+  }
+
   const messageListener = (message, sender, sendResponse) => {
     if (message?.type === 'EXTRACT_JOB') {
       extractCurrentJob().then(sendResponse).catch((error) => sendResponse({
@@ -60,9 +107,14 @@
   }
 
   chrome.runtime.onMessage.addListener(messageListener)
+  observeJobChanges()
   globalThis.__aiResumePageAssistant = {
     dispose() {
       chrome.runtime.onMessage.removeListener(messageListener)
+      observer?.disconnect()
+      clearTimeout(autoCaptureTimer)
+      clearInterval(locationTimer)
+      clearInterval(pollingTimer)
     },
   }
 })()
