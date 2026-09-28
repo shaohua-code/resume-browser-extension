@@ -20,6 +20,9 @@ const [packageJson, manifest, background, content, app, adapterNames] = await Pr
 
 const messagePattern = /type\s*(?:===|:)\s*['"]([A-Z][A-Z0-9_]+)['"]/g
 const messages = [...`${background}\n${content}\n${app}`.matchAll(messagePattern)].map((match) => match[1])
+// 以后台唯一的动态注入清单作为页面模块快照来源，Manifest 不再维护常驻脚本列表。
+const contentFiles = background.match(/const CONTENT_FILES\s*=\s*\[([\s\S]*?)\]/)?.[1] || ''
+const dynamicContentFiles = [...contentFiles.matchAll(/['"]([^'"]+\.js)['"]/g)].map((match) => match[1])
 const snapshot = {
   generatedAt: new Date().toISOString(),
   root,
@@ -30,6 +33,7 @@ const snapshot = {
   permissions: manifest.permissions || [],
   hostPermissions: manifest.host_permissions || [],
   contentScripts: manifest.content_scripts?.[0]?.js || [],
+  dynamicContentFiles,
   adapters: adapterNames.filter((name) => name.endsWith('.js')).sort(),
   runtimeMessages: [...new Set(messages)].sort(),
   prd: 'prd/AI简历浏览器扩展-PRD.md',

@@ -1,11 +1,7 @@
 const MENU_IDENTIFY = 'ai-resume-identify-job'
 const MENU_SAVE = 'ai-resume-save-job'
 const MENU_FILL = 'ai-resume-fill-form'
-const AUTO_CAPTURE_DELAY = 1200
-const autoCaptureTimers = new Map()
-
-// 保持与 manifest 中的加载顺序一致：共享能力最先，监听入口最后。
-// 开发者模式热构建后会重新注入这些文件，因此招聘页面本身不必刷新。
+// 仅在用户点击插件、页面入口或右键菜单时动态注入页面能力，避免安装后常驻读取招聘页面。
 const CONTENT_FILES = [
   'content/shared.js',
   'content/adapters/structured.js',
@@ -23,30 +19,52 @@ const CONTENT_FILES = [
 ]
 
 chrome.runtime.onInstalled.addListener(async () => {
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   await chrome.contextMenus.removeAll()
   chrome.contextMenus.create({ id: MENU_IDENTIFY, title: '\u7528 AI \u7b80\u5386\u5206\u6790\u5f53\u524d\u5c97\u4f4d', contexts: ['page', 'selection'] })
   chrome.contextMenus.create({ id: MENU_SAVE, title: '\u6536\u85cf\u5f53\u524d\u5c97\u4f4d\u5f85\u51c6\u5907', contexts: ['page', 'selection'] })
   chrome.contextMenus.create({ id: MENU_FILL, title: '\u4e00\u952e\u6295\u9001\u5f53\u524d\u5c97\u4f4d\u7b80\u5386', contexts: ['page', 'editable'] })
-  const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-  if (activeTab?.id) scheduleAutoCapture(activeTab.id, activeTab.url, 700)
 })
 
-// A full page load is one of the two automatic recognition paths. The content
-// script handles SPA changes; this background fallback covers sites that render
-// their job detail only after the tab completes loading.
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete') scheduleAutoCapture(tabId, tab.url)
-})
+// 工具栏点击是明确的用户手势；只有此时才打开侧边栏并解析当前招聘页。
+chrome.action.onClicked.addListener(async (tab) => {
+  if (!tab?.id || tab.windowId == null) return
+  const openPromise = chrome.sidePanel.open({ windowId: tab.windowId })
+  const capturePromise = isSupportedJobPage(tab.url)
+    ? captureJob(tab.id)
+    : Promise.resolve({ ok: false, error: '请先打开支持的招聘网站岗位详情，再点击识别' })
 
-chrome.tabs.onActivated.addListener(async ({ tabId }) => {
   try {
-    const tab = await chrome.tabs.get(tabId)
-    scheduleAutoCapture(tabId, tab.url, 450)
-  } catch {
-    // A tab can disappear between activation and lookup.
+    await openPromise
+    const result = await capturePromise
+    if (result.ok) {
+      await chrome.storage.session.set({ pendingJob: result.job, activeJobTabId: tab.id, pageActionError: '' })
+    } else {
+      await chrome.storage.session.remove(['pendingJob', 'activeJobTabId'])
+      await chrome.storage.session.set({ pageActionError: result.error, pendingAction: '' })
+    }
+  } catch (error) {
+    await chrome.storage.session.set({ pageActionError: error?.message || '暂时无法打开岗位助手' })
   }
 })
+
+// 标签切换只清除旧岗位上下文，不读取新页面，避免侧边栏误用前一个标签页的岗位。
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  await clearJobForTabSwitch(tabId)
+})
+
+// 导航只清除旧岗位数据，不解析新页面；SPA 内容变化由用户手动点击识别刷新。
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (changeInfo.url || changeInfo.status === 'loading') await clearJobForTabSwitch(-1, tabId)
+})
+
+async function clearJobForTabSwitch(activeTabId, navigatingTabId = null) {
+  const { activeJobTabId } = await chrome.storage.session.get('activeJobTabId')
+  const tabChanged = activeJobTabId && activeTabId !== -1 && activeJobTabId !== activeTabId
+  const navigatingCurrentJob = activeJobTabId && navigatingTabId === activeJobTabId
+  if (tabChanged || navigatingCurrentJob) {
+    await chrome.storage.session.remove(['pendingJob', 'activeJobTabId', 'pendingAction'])
+  }
+}
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   try {
@@ -61,8 +79,9 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     }
     const result = await captureJob(tab.id, info.selectionText || '')
     await chrome.storage.session.set(result.ok
-      ? { pendingJob: result.job, pendingAction: info.menuItemId === MENU_SAVE ? 'save' : 'analyze', pageActionError: '' }
+      ? { pendingJob: result.job, activeJobTabId: tab.id, pendingAction: info.menuItemId === MENU_SAVE ? 'save' : 'analyze', pageActionError: '' }
       : { pageActionError: result.error, pendingAction: '' })
+    if (!result.ok) await chrome.storage.session.remove(['pendingJob', 'activeJobTabId'])
     await chrome.sidePanel.open({ windowId: tab.windowId })
   } catch (error) {
     if (tab?.windowId) await chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {})
@@ -81,14 +100,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === 'AUTOFILL_PAGE') { autofillActivePage(message.profile).then(sendResponse); return true }
   if (message?.type === 'DELIVER_CURRENT_JOB') { deliverCurrentJob(message.profile).then(sendResponse); return true }
   if (message?.type === 'CAPTURE_CURRENT_JOB') { captureActiveJob().then(sendResponse); return true }
-  if (message?.type === 'AUTO_DETECTED_JOB') {
-    if (!message.visible) {
-      sendResponse({ ok: false, ignored: true })
-      return false
-    }
-    storeAutoDetectedJob(sender?.tab?.id, message.job).then(sendResponse)
-    return true
-  }
 })
 
 // 悬浮入口的点击属于明确的用户手势。先立即打开全局侧边栏，再异步识别当前岗位，
@@ -111,10 +122,10 @@ async function openSidePanelFromPage(sender) {
 
   const result = await capturePromise
   if (result.ok) {
-    await chrome.storage.session.set({ pendingJob: result.job, pageActionError: '' })
+    await chrome.storage.session.set({ pendingJob: result.job, activeJobTabId: tab.id, pageActionError: '' })
   } else {
     // 识别失败时清理旧岗位，防止侧边栏把上一个页面的结果误认为当前岗位。
-    await chrome.storage.session.remove('pendingJob')
+    await chrome.storage.session.remove(['pendingJob', 'activeJobTabId'])
     await chrome.storage.session.set({ pageActionError: result.error || '暂时无法识别当前岗位' })
   }
   return { ok: true, detected: Boolean(result.ok), error: result.ok ? '' : result.error }
@@ -130,53 +141,12 @@ async function captureActiveJob() {
 }
 
 async function captureJob(tabId, selectionText = '') {
-  try { return await runInTab(tabId, { type: 'EXTRACT_JOB', selectionText }) }
-  catch (error) { return { ok: false, error: error.message || '\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\u5f53\u524d\u5c97\u4f4d' } }
-}
-
-function scheduleAutoCapture(tabId, url, delay = AUTO_CAPTURE_DELAY) {
-  if (!tabId || !isSupportedJobPage(url)) return
-  clearTimeout(autoCaptureTimers.get(tabId))
-  autoCaptureTimers.set(tabId, setTimeout(() => {
-    autoCaptureTimers.delete(tabId)
-    captureVisibleJob(tabId)
-  }, delay))
-}
-
-async function captureVisibleJob(tabId) {
-  const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-  if (activeTab?.id !== tabId) return
-  await chrome.storage.session.set({ autoDetectionState: 'detecting' })
-  const result = await captureJob(tabId)
-  if (result?.ok) {
-    await storeAutoDetectedJob(tabId, result.job)
-    return
+  try {
+    const result = await runInTab(tabId, { type: 'EXTRACT_JOB', selectionText })
+    if (result?.ok) await chrome.storage.session.set({ activeJobTabId: tabId })
+    return result
   }
-  // Detail pages often render in several batches. Keep the current result and
-  // let the content script's observer/polling retry when the page settles.
-  await chrome.storage.session.set({ autoDetectionState: 'waiting' })
-}
-
-function jobFingerprint(job) {
-  const text = String(job?.jdText || '').replace(/\s+/g, ' ').slice(0, 800)
-  return [job?.sourceUrl, job?.sourceTitle, job?.company, text].join('|')
-}
-
-async function storeAutoDetectedJob(tabId, job) {
-  if (!tabId || !job?.sourceTitle || !job?.jdText) return { ok: false, error: 'No usable job found' }
-
-  const fingerprint = jobFingerprint(job)
-  const { autoDetectedJobFingerprint } = await chrome.storage.session.get('autoDetectedJobFingerprint')
-  if (fingerprint === autoDetectedJobFingerprint) return { ok: true, unchanged: true }
-
-  await chrome.storage.session.set({
-    pendingJob: job,
-    autoDetectedJobFingerprint: fingerprint,
-    autoDetectedAt: Date.now(),
-    autoDetectionState: 'recognized',
-    pageActionError: '',
-  })
-  return { ok: true, updated: true }
+  catch (error) { return { ok: false, error: error.message || '\u6682\u65f6\u65e0\u6cd5\u8bfb\u53d6\u5f53\u524d\u5c97\u4f4d' } }
 }
 
 function isSupportedJobPage(rawUrl) {

@@ -59,6 +59,7 @@ source_platform, source_original, jd_text, resume_id, match_result, status
 |---|---|
 | `storage.local.extensionSession` | 插件受限访问令牌 |
 | `storage.session.pendingJob` | 当前识别岗位 |
+| `storage.session.activeJobTabId` | 当前岗位所属标签页；切换标签时用于清除旧岗位上下文 |
 | `storage.session.pendingAction` | 右键菜单待执行的 `save` 或 `analyze` |
 | `storage.session.pendingAutofill` | 待执行回填的活动标签页信息 |
 | `storage.session.pageActionError` | 页面动作错误提示 |
@@ -68,10 +69,10 @@ source_platform, source_original, jd_text, resume_id, match_result, status
 ## 权限边界
 
 - `sidePanel`：显示 Vue Agent。
-- `scripting`、`activeTab`、招聘站点 `host_permissions`：在用户访问的岗位页执行适配器。
+- `scripting`、`activeTab`：用户触发后临时在当前岗位页执行适配器；招聘站点不声明常驻脚本或主机权限。
 - `contextMenus`：右键快捷动作。
 - `identity`：一次性网页授权回调。
 - `storage`：插件会话与临时岗位状态。
 - `tabs`：获取活动页面和打开网页端收藏/编辑器。
 
-增加新平台时必须同时更新 `host_permissions`、`content_scripts.matches`、平台适配器、背景支持域名判断、回归样例、PRD 与本契约。
+增加新平台时必须同时更新平台适配器、背景支持域名判断、回归样例、PRD 与本契约；招聘域名不加入常驻 `content_scripts` 或 `host_permissions`。

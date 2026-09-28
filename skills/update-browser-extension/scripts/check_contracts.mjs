@@ -13,10 +13,11 @@ function expect(condition, message) {
   if (!condition) errors.push(message)
 }
 
-const [packageText, manifestText, background, launcher, prd, skill, skillUi] = await Promise.all([
+const [packageText, manifestText, background, content, launcher, prd, skill, skillUi] = await Promise.all([
   read('package.json'),
   read('public/manifest.json'),
   read('public/background.js'),
+  read('public/content.js'),
   read('public/content/launcher.js'),
   read('prd/AI简历浏览器扩展-PRD.md'),
   read('skills/update-browser-extension/SKILL.md'),
@@ -25,14 +26,14 @@ const [packageText, manifestText, background, launcher, prd, skill, skillUi] = a
 
 const packageJson = JSON.parse(packageText)
 const manifest = JSON.parse(manifestText)
-const manifestFiles = manifest.content_scripts?.[0]?.js || []
 const backgroundList = background.match(/const CONTENT_FILES\s*=\s*\[([\s\S]*?)\]/)?.[1] || ''
 const backgroundFiles = [...backgroundList.matchAll(/['"]([^'"]+\.js)['"]/g)].map((match) => match[1])
 
 expect(packageJson.version === manifest.version, 'package.json 与 manifest.json 版本不一致')
 expect(Number.parseInt(manifest.minimum_chrome_version, 10) >= 116, '悬浮入口需要 minimum_chrome_version >= 116')
 expect(manifest.permissions?.includes('sidePanel'), 'Manifest 缺少 sidePanel 权限')
-expect(JSON.stringify(manifestFiles) === JSON.stringify(backgroundFiles), 'Manifest 与 background CONTENT_FILES 顺序不一致')
+// 招聘站点只能在用户主动触发时临时访问，防止以后重构时意外恢复常驻读取。
+expect(!manifest.content_scripts?.length, '招聘站点不得配置自动运行的 Manifest content_scripts')
 
 const requiredFiles = [
   'content/shared.js',
@@ -49,21 +50,26 @@ const requiredFiles = [
   'content/launcher.js',
   'content.js',
 ]
-expect(JSON.stringify(manifestFiles) === JSON.stringify(requiredFiles), '内容脚本模块缺失或加载顺序发生未记录变化')
+expect(JSON.stringify(backgroundFiles) === JSON.stringify(requiredFiles), '后台动态注入模块缺失或加载顺序发生未记录变化')
 
-for (const file of manifestFiles) {
+for (const file of backgroundFiles) {
   try {
     await access(path.join(root, 'public', file))
   } catch {
-    errors.push(`Manifest 引用了不存在的文件：public/${file}`)
+    errors.push(`后台注入配置引用了不存在的文件：public/${file}`)
   }
 }
 
-const requiredHosts = ['zhipin', '51job', 'zhaopin', 'liepin', 'lagou', '58', 'ganji', 'yingjiesheng']
-for (const host of requiredHosts) {
-  expect(manifest.host_permissions?.some((pattern) => pattern.includes(host)), `host_permissions 缺少 ${host}`)
+const recruitingHosts = ['zhipin', '51job', 'zhaopin', 'liepin', 'lagou', '58', 'ganji', 'yingjiesheng']
+for (const host of recruitingHosts) {
+  expect(!manifest.host_permissions?.some((pattern) => pattern.includes(host)), `招聘站点 ${host} 不应申请常驻 host_permissions`)
 }
 
+expect(background.includes('chrome.action.onClicked.addListener'), '工具栏点击没有显式打开侧边栏的处理器')
+expect(background.includes('chrome.scripting.executeScript'), '后台缺少用户触发后的动态注入')
+const tabUpdateHandler = background.match(/chrome\.tabs\.onUpdated\.addListener\(async \(tabId, changeInfo\) => \{([\s\S]*?)\n\}\)/)?.[1] || ''
+expect(tabUpdateHandler.includes('clearJobForTabSwitch') && !tabUpdateHandler.includes('captureJob'), '导航监听只能清除旧岗位，不能读取新页面')
+expect(!content.includes('AUTO_DETECTED_JOB') && !content.includes('MutationObserver') && !content.includes('setInterval'), '内容脚本不得自动观察或轮询招聘页面')
 expect(launcher.includes("attachShadow({ mode: 'open' })"), '悬浮入口未使用 Shadow DOM 隔离')
 expect(launcher.includes("type: 'OPEN_SIDE_PANEL_FROM_PAGE'"), '悬浮入口消息契约缺失')
 expect(background.includes("message?.type === 'OPEN_SIDE_PANEL_FROM_PAGE'"), '后台未处理悬浮入口消息')
@@ -81,4 +87,4 @@ if (errors.length) {
   process.exit(1)
 }
 
-console.log(`插件契约检查通过：${manifestFiles.length} 个内容脚本，${requiredHosts.length} 个招聘平台域名组。`)
+console.log(`插件契约检查通过：${backgroundFiles.length} 个按需注入模块；招聘站点未配置常驻权限。`)

@@ -4,8 +4,8 @@
 
 | 路径 | 职责 |
 |---|---|
-| `public/manifest.json` | Manifest V3 权限、主机范围、内容脚本顺序、侧边栏入口 |
-| `public/background.js` | Service Worker；右键菜单、账号连接、侧边栏打开、页面消息协调 |
+| `public/manifest.json` | Manifest V3 权限、官网/API 主机范围、侧边栏入口；招聘页不声明常驻内容脚本 |
+| `public/background.js` | Service Worker；右键菜单、按需注入顺序、账号连接、侧边栏打开、页面消息协调 |
 | `public/content/shared.js` | 文本归一化、JD 去噪、JSON-LD、字段校验、候选合并和响应转换 |
 | `public/content/adapters/*.js` | 招聘平台独立岗位提取规则 |
 | `public/content/actions.js` | 表单回填与受控投递入口，不承担岗位解析 |
@@ -22,9 +22,9 @@
 
 ```text
 招聘网页
-  -> launcher / 右键 / 侧边栏按钮
+  -> 用户点击工具栏 / 右键 / 已注入的 launcher / 侧边栏识别按钮
   -> background service worker
-  -> 按 manifest 顺序注入 content modules
+  -> 按 CONTENT_FILES 顺序临时注入 content modules
   -> 平台 adapter + structured JobPosting
   -> shared normalize / validate / merge
   -> storage.session pendingJob
@@ -48,4 +48,4 @@
 - 不在平台适配器调用后端或操作侧边栏。
 - 不在 `background.js` 复制清洗与平台识别逻辑。
 - 不在 `actions.js` 自动点击最终提交按钮。
-- Manifest 和 `CONTENT_FILES` 的文件顺序必须完全一致，由契约脚本检查。
+- 招聘站点不得恢复 Manifest 常驻注入；后台 `CONTENT_FILES` 是动态注入的唯一顺序来源。

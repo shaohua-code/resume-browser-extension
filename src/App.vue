@@ -107,26 +107,29 @@ function syncSavedState() {
 }
 
 onMounted(async () => {
+  // 先订阅岗位上下文变化，避免页面解析先于账号初始化完成时漏掉后台消息。
+  chrome.storage.session.onChanged.addListener(handleSessionChange)
   await loadPendingJob()
   await loadBootstrap()
   if (!bootstrap.value) await connect()
   if (bootstrap.value) {
     await refreshSavedJobs()
-    if (!job.value) await captureCurrentJob({ silent: true })
   }
   await runPendingAutofill()
   await runPendingAction()
   await checkPageAccess()
-  chrome.storage.session.onChanged.addListener(handleSessionChange)
 })
 
 async function checkPageAccess() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
     const url = new URL(tab?.url || '')
-    const granted = await chrome.permissions.contains({ origins: [`${url.origin}/*`] })
-    pageAccess.value = granted ? '当前招聘网站已获插件读取权限' : '当前网站未授权，无法识别岗位内容'
-    if (!granted && /^https?:$/.test(url.protocol)) message.warning(pageAccess.value)
+    // activeTab 是按用户操作授予的临时权限，不再按招聘域名申请常驻 origin 权限。
+    const supported = /(^|\.)(zhipin|51job|zhaopin|liepin|lagou|58|ganji|yingjiesheng)\.com$/i.test(url.hostname)
+    pageAccess.value = supported
+      ? '插件只会在你主动点击识别时读取当前招聘页'
+      : '当前页面不在支持范围内；插件不会自动读取页面内容'
+    if (!supported && /^https?:$/.test(url.protocol)) message.info(pageAccess.value)
   } catch { pageAccess.value = '' }
 }
 
@@ -155,10 +158,6 @@ function handleSessionChange(changes, areaName) {
   }
   if (changes.pendingAction) pendingAction.value = changes.pendingAction.newValue || ''
   if (changes.pageActionError?.newValue) error.value = changes.pageActionError.newValue
-  if (changes.autoDetectedAt?.newValue && changes.pendingJob?.newValue) {
-    notice.value = '\u5df2\u81ea\u52a8\u8bc6\u522b\u5f53\u524d\u5c97\u4f4d\uff0c\u53ef\u76f4\u63a5\u5f00\u59cb\u6295\u524d\u51c6\u5907\u3002'
-    message.success('\u5df2\u81ea\u52a8\u8bc6\u522b\u5f53\u524d\u5c97\u4f4d')
-  }
   runPendingAction()
 }
 
@@ -244,7 +243,7 @@ async function captureCurrentJob({ silent = false } = {}) {
     result.value = null
     confirmingRemove.value = false
     syncSavedState()
-    await chrome.storage.session.set({ pendingJob: response.job })
+    await chrome.storage.session.set({ pendingJob: response.job, pageActionError: '' })
     const missing = [
       !job.value.company && '\u516c\u53f8',
       !job.value.salary && '\u85aa\u8d44',
@@ -258,7 +257,7 @@ async function captureCurrentJob({ silent = false } = {}) {
       job.value = null
       result.value = null
       savedId.value = null
-      await chrome.storage.session.remove('pendingJob')
+      await chrome.storage.session.remove(['pendingJob', 'activeJobTabId'])
       error.value = requestError.message
       message.error(error.value)
     }
