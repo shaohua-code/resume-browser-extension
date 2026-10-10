@@ -126,6 +126,7 @@
 4. 已登录用户确认后签发一次性授权码；未登录用户先完成登录。
 5. 插件使用授权码调用 `/api/extension/auth/exchange`，只在 `storage.local` 保存受限访问令牌。
 6. 插件不得读取网页 refresh token、密码、Cookie 或验证码。
+7. 产品账号绑定中央 IAM 后，扩展请求仍使用产品访问令牌；服务端按岗位读写动作检查 `resume.read/write`，重新分析还要求 `ai.generate`，模型调用要求 `model.invoke`。无权限时请求失败，插件不保存 IAM token 或 IAM 资源标识。
 
 ### FR-03 当前岗位识别
 

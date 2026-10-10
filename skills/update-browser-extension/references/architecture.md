@@ -29,7 +29,7 @@
   -> shared normalize / validate / merge
   -> storage.session pendingJob
   -> Vue Side Panel
-  -> backend extension API / AI match
+  -> backend extension API / AI match（已绑定 IAM 的本人资源检查 resume.read/write；重新分析另查 ai.generate，模型调用另查 model.invoke）
   -> extension_saved_job
   -> 网页端“我的收藏”
 ```

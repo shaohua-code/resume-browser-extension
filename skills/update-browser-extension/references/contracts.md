@@ -53,6 +53,8 @@ source_platform, source_original, jd_text, resume_id, match_result, status
 | `DELETE` | `/api/extension/jobs/:jobId` | 插件或网页端取消本人收藏，不改变招聘网站状态 |
 | `POST` | `/api/ai/match` | 当前简历与岗位匹配分析 |
 
+扩展使用产品授权码换取的受限产品访问令牌调用以上接口。对于已绑定 IAM 的产品账号，后端仍按本地账号过滤本人数据，并执行中央权限检查：`bootstrap`、简历回填、`GET /jobs*` 与进度历史要求 `resume.read`；岗位创建/更新、阶段更新、删除要求 `resume.write`；岗位重新分析要求 `resume.write` + `ai.generate`，底层模型调用再检查 `model.invoke`。插件不保存 IAM token 或本地资源 ID；无权限时后端拒绝请求。
+
 ## Chrome 存储
 
 | 区域/键 | 内容 |
