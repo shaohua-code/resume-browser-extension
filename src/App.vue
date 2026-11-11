@@ -6,9 +6,9 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   ArrowRight, BadgeCheck, BriefcaseBusiness, CheckCircle2, CircleAlert,
-  ClipboardCheck, Copy, ExternalLink, FolderHeart, LoaderCircle, RefreshCw,
-  Send, ShieldCheck, Sparkles, WandSparkles,
-} from 'lucide-vue-next'
+  ClipboardCheck, Copy, ExternalLink, FileEdit, FolderHeart, LoaderCircle, RefreshCw,
+  Send, ShieldCheck, Sparkles, TrendingUp, WandSparkles,
+} from '@lucide/vue'
 import { analyzeJob, deleteSavedJob, exchangeExtensionCode, getAutofillData, getBootstrap, getSavedJobs, saveJob } from './api'
 import { getPreferredOrigin } from './origins'
 
@@ -381,7 +381,23 @@ async function deliverCurrentJob() {
   }
 }
 
-function openEditor() { if (selectedResume.value) chrome.tabs.create({ url: `${appUrl}/editor/${selectedResume.value}` }) }
+// 打开简历编辑器
+function openEditor() {
+  if (selectedResume.value) chrome.tabs.create({ url: `${appUrl}/editor/${selectedResume.value}` })
+}
+
+// 打开简历编辑器并提示用户根据缺口优化
+function openEditorWithTip() {
+  if (!selectedResume.value) return
+  // 将岗位要求和缺口信息作为参数传递，方便编辑器提供针对性建议
+  const gapsParam = encodeURIComponent(result.value?.gaps?.slice(0, 3).join(',') || '')
+  const jobTitle = encodeURIComponent(job.value?.sourceTitle || '')
+  chrome.tabs.create({
+    url: `${appUrl}/editor/${selectedResume.value}?optimize=1&job=${jobTitle}&gaps=${gapsParam}`
+  })
+  message.info('已打开简历编辑器，请根据岗位缺口优化简历内容')
+}
+
 function openSavedJobs() { chrome.tabs.create({ url: `${appUrl}/user?tab=saved-jobs` }) }
 
 async function runPendingAutofill() {
@@ -448,13 +464,64 @@ async function runPendingAutofill() {
       </section>
 
       <section v-if="result" class="result-card">
-        <div class="verdict" :class="verdict.tone"><div><span>岗位判断</span><b>{{ verdict.label }}</b></div><strong>{{ result.score }}<small>/100</small></strong></div>
+        <!-- 匹配度分数与进度条可视化 -->
+        <div class="verdict" :class="verdict.tone">
+          <div><span>岗位判断</span><b>{{ verdict.label }}</b></div>
+          <strong>{{ result.score }}<small>/100</small></strong>
+        </div>
+        <div class="match-progress">
+          <div class="match-progress-bar" :class="verdict.tone" :style="{ width: `${result.score}%` }"></div>
+        </div>
         <p class="verdict-copy">{{ verdict.text }}</p>
-        <div class="result-block good"><h2><BadgeCheck :size="15" />可用证据</h2><p v-for="item in result.advantages.slice(0, 2)" :key="item">{{ item }}</p><p v-if="!result.advantages.length">请在简历中补充可证明的项目或工作证据。</p></div>
-        <div v-if="result.gaps.length" class="result-block warn"><h2><CircleAlert :size="15" />投递前注意</h2><p v-for="item in result.gaps.slice(0, 2)" :key="item">{{ item }}</p></div>
-        <div class="result-block action"><h2><ClipboardCheck :size="15" />下一步动作</h2><p v-for="(item, index) in nextActions" :key="item"><i>{{ index + 1 }}</i>{{ item }}</p></div>
-        <div class="opener"><div><span>{{ ui.opener }}</span><p>{{ result.opener }}</p></div><button title="复制开场白" @click="copyOpener"><Copy :size="16" /></button></div>
-        <div class="agent-actions"><button class="agent-secondary" :disabled="filling" @click="deliverCurrentJob"><LoaderCircle v-if="filling" class="spin" :size="15" /><Send v-else :size="15" />{{ ui.deliver }}</button><button class="agent-outline" @click="openEditor">{{ ui.editor }}<ExternalLink :size="14" /></button></div>
+
+        <!-- 可用证据（你的优势）展示 -->
+        <div class="result-block good">
+          <h2><BadgeCheck :size="15" />可用证据</h2>
+          <p v-for="item in result.advantages.slice(0, 3)" :key="item">{{ item }}</p>
+          <p v-if="!result.advantages.length">请在简历中补充可证明的项目或工作证据。</p>
+        </div>
+
+        <!-- 投递前注意（能力缺口）展示 -->
+        <div v-if="result.gaps.length" class="result-block warn">
+          <h2><CircleAlert :size="15" />投递前注意</h2>
+          <p v-for="item in result.gaps.slice(0, 3)" :key="item">{{ item }}</p>
+          <!-- 一键优化简历入口：当存在缺口时，引导用户优化简历 -->
+          <button class="optimize-resume-btn" @click="openEditorWithTip">
+            <FileEdit :size="14" />针对缺口优化简历
+          </button>
+        </div>
+
+        <!-- 下一步动作建议 -->
+        <div class="result-block action">
+          <h2><ClipboardCheck :size="15" />下一步动作</h2>
+          <p v-for="(item, index) in nextActions" :key="item"><i>{{ index + 1 }}</i>{{ item }}</p>
+        </div>
+
+        <!-- 沟通开场白 -->
+        <div class="opener">
+          <div><span>{{ ui.opener }}</span><p>{{ result.opener }}</p></div>
+          <button title="复制开场白" @click="copyOpener"><Copy :size="16" /></button>
+        </div>
+
+        <!-- 匹配度快速总结条 -->
+        <div class="match-summary">
+          <div class="match-summary-item">
+            <TrendingUp :size="14" />
+            <span>匹配优势 {{ result.advantages.length }} 项</span>
+          </div>
+          <div class="match-summary-item warn" v-if="result.gaps.length">
+            <CircleAlert :size="14" />
+            <span>待补强 {{ result.gaps.length }} 项</span>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="agent-actions">
+          <button class="agent-secondary" :disabled="filling" @click="deliverCurrentJob">
+            <LoaderCircle v-if="filling" class="spin" :size="15" /><Send v-else :size="15" />{{ ui.deliver }}
+          </button>
+          <button class="agent-outline" @click="openEditor">{{ ui.editor }}<ExternalLink :size="14" /></button>
+        </div>
       </section>
 
       <p v-if="notice" class="agent-notice"><CheckCircle2 :size="15" />{{ notice }}</p>
@@ -472,4 +539,10 @@ async function runPendingAutofill() {
 .job-skills{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.job-skills span{padding:3px 6px;border:1px solid #d8e7e1;border-radius:5px;background:#fff;color:#557068;font-size:10px}
 .job-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.subtle-action.is-saved{color:#a44f3b}.subtle-action:disabled{opacity:.55;cursor:not-allowed}
 .agent-access{display:flex;gap:6px;margin:10px 2px;color:#70817c;font-size:11px;line-height:1.5}
+/* 匹配度进度条样式 */
+.match-progress{height:6px;margin:8px 0 12px;border-radius:3px;background:#e8efec;overflow:hidden}.match-progress-bar{height:100%;border-radius:3px;transition:width .4s ease}.match-progress-bar.strong{background:linear-gradient(90deg,#1a9a7d,#22b594)}.match-progress-bar.watch{background:linear-gradient(90deg,#d4a017,#e5b82a)}.match-progress-bar.weak{background:linear-gradient(90deg,#c95d45,#e07460)}
+/* 匹配度快速总结 */
+.match-summary{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 12px;padding:10px 12px;border-radius:7px;background:#f7faf8}.match-summary-item{display:flex;align-items:center;gap:5px;color:#3a6359;font-size:11px;font-weight:600}.match-summary-item.warn{color:#b7791f}
+/* 针对缺口优化简历按钮 */
+.optimize-resume-btn{display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:7px 12px;border:1px solid #d9b76c;border-radius:6px;background:#fffbf0;color:#9a6c1a;font-size:11px;font-weight:600;cursor:pointer;transition:background .2s ease,border-color .2s ease}.optimize-resume-btn:hover{background:#fff7e0;border-color:#c9a35c}
 </style>

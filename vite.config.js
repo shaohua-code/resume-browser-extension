@@ -11,16 +11,18 @@ export default defineConfig({
   },
   server: {
     port: 5175,
-    host:'0.0.0.0',
+    host: '0.0.0.0',
     proxy: {
+      // 后端 API 代理
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
-    },
-    '/uploads': {
-      target: 'http://localhost:8000',
-      changeOrigin: true,
+      // 上传资源代理
+      '/uploads': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })
